@@ -273,8 +273,91 @@ def plot_top_locations(df: pd.DataFrame, filename: Optional[str] = "06_top_locat
     return save_or_show(fig, filename)
 
 
-def generate_all_visualizations(df: pd.DataFrame):
-    """Generates all 6 core publication figures in one call."""
+def plot_market_opportunity(df: pd.DataFrame, filename: Optional[str] = "07_market_opportunity_matrix.png"):
+    """Plots Market Opportunity & White-Space Matrix across Cuisines & Locations."""
+    from business_metrics import compute_market_opportunity_matrix
+    opp_df = compute_market_opportunity_matrix(df).head(15)
+    
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    
+    colors = {
+        "High Opportunity (Underserved)": "#10B981",
+        "Proven Hotspot (High Demand)": "#0EA5E9",
+        "Saturated / High Competition": "#E23744",
+        "Niche / Developing": "#94A3B8"
+    }
+    
+    for quad, group in opp_df.groupby("market_quadrant"):
+        ax.scatter(
+            group["supply_count"],
+            group["avg_rating"],
+            s=group["opportunity_score"] * 12,
+            c=colors.get(quad, "#64748B"),
+            alpha=0.75,
+            edgecolors="none",
+            label=quad
+        )
+        
+    for _, row in opp_df.head(7).iterrows():
+        label = f"{row['cuisine']} ({row['location'].split()[0]})"
+        ax.annotate(
+            label,
+            (row["supply_count"], row["avg_rating"]),
+            textcoords="offset points",
+            xytext=(6, 4),
+            fontsize=8,
+            color="#334155"
+        )
+        
+    ax.axhline(3.9, color="#CBD5E1", linestyle="--", linewidth=1)
+    ax.axvline(6, color="#CBD5E1", linestyle="--", linewidth=1)
+    
+    ax.set_title("Market Opportunity & White-Space Matrix (Cuisine vs Location)", pad=14, loc="left", color="#0F172A")
+    ax.set_xlabel("Existing Restaurant Supply Count (Competition)", labelpad=8)
+    ax.set_ylabel("Average Customer Rating (Quality / Demand)", labelpad=8)
+    ax.legend(frameon=True, facecolor="#F8FAFC", edgecolor="#E2E8F0", loc="lower right", fontsize=8.5)
+    ax.grid(True, linestyle="--", alpha=0.4)
+    
+    return save_or_show(fig, filename)
+
+
+def plot_feature_importance(fi_df: pd.DataFrame, filename: Optional[str] = "08_ml_feature_importance.png", top_n: int = 8):
+    """Plots top features driving high restaurant ratings according to Random Forest."""
+    top_fi = fi_df.head(top_n)
+    
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    
+    bars = ax.barh(
+        top_fi["Feature_Label"][::-1],
+        top_fi["Importance"][::-1],
+        color=PALETTE_PRIMARY,
+        height=0.6,
+        edgecolor="none"
+    )
+    
+    for bar in bars:
+        width = bar.get_width()
+        ax.text(
+            width + 0.005,
+            bar.get_y() + bar.get_height() / 2,
+            f"{width:.1%}",
+            va="center",
+            ha="left",
+            fontsize=8.5,
+            color="#334155",
+            fontweight="semibold"
+        )
+        
+    ax.set_title("Key Drivers of High Customer Ratings (Machine Learning)", pad=12, loc="left", color="#0F172A")
+    ax.set_xlabel("Relative Importance Weight", labelpad=8)
+    ax.set_xlim(0, top_fi["Importance"].max() * 1.25)
+    ax.grid(axis="x", linestyle="--", alpha=0.6)
+    
+    return save_or_show(fig, filename)
+
+
+def generate_all_visualizations(df: pd.DataFrame, fi_df: Optional[pd.DataFrame] = None):
+    """Generates all publication figures in one call."""
     print("Generating aesthetic figures...")
     plot_ratings_distribution(df)
     plot_top_cuisines(df)
@@ -282,10 +365,17 @@ def generate_all_visualizations(df: pd.DataFrame):
     plot_cost_vs_rating(df)
     plot_top_chains(df)
     plot_top_locations(df)
+    plot_market_opportunity(df)
+    if fi_df is not None and not fi_df.empty:
+        plot_feature_importance(fi_df)
     print("All figures successfully saved to reports/figures/.")
 
 
 if __name__ == "__main__":
     from data_loader import load_clean_data
+    from ml_model import RestaurantRatingPredictor
     clean_df = load_clean_data()
-    generate_all_visualizations(clean_df)
+    predictor = RestaurantRatingPredictor()
+    predictor.train(clean_df)
+    generate_all_visualizations(clean_df, predictor.feature_importance_df)
+
